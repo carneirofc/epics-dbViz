@@ -3,27 +3,38 @@ import re
 
 class Record():
     def __init__(self, raw_str):
-        self.raw_str = raw_str
+        self.__raw_str = raw_str
         self.name = ''
         self.type = ''
-        self.process()
-        self.str_filter = re.compile(r'(?!__|name|type|process|str_filter|raw_str)')
+        self.__process()
+        self.__str_filter = re.compile(r'(?!_|name|type|node)')
+        # self.__node_filter = re.compile(r'(?!_|node)')
 
     def __str__(self):
         return '<Record %s\t%s\t%s>' % \
             (self.type, self.name,['%s=%s'%(attr,getattr(self, attr)) for attr in dir(self) \
-                if self.str_filter.match(attr)])
+                if self.__str_filter.match(attr)])
 
-    def process(self):
+    def node(self, digraph):
+        lbl = '{%s}'%'|'.join(
+                ['{<%s> %s| %s}'%('name','name', getattr(self, 'name'))] +
+                ['{<%s> %s| %s}'%('type','type', getattr(self, 'type'))] +
+                ['{<%s> %s| %s}'%(attr,attr,getattr(self, attr)) for attr in dir(self) if self.__str_filter.match(attr)])
+
+        digraph.node(self.name.replace(':',' '), shape='record',label=lbl)
+
+    def __process(self):
         # não está pegando tudo !
-        rec = re.findall(r'record[^)]*\)', self.raw_str )[0]
-        self.type = re.sub(r'record\(', '', rec.replace(' ', '').split(',')[0])
-        self.name = re.sub(r'"\).*|"', '', rec.replace(' ', '').split(',')[1])
+        rec = re.findall(r'record[^)]*\)', self.__raw_str )[0]
+        self.type = re.sub(r'record\(', '', rec.replace(' ', '').split(',',1)[0])
+        self.name = re.sub(r'"\).*|"', '', rec.replace(' ', '').split(',',1)[1])
 
-        for field in re.findall(r'field[^)]*\)', self.raw_str ):
+        # for field in re.findall(r'field[^)]*\)', self.__raw_str ):
+        for field in re.findall(r'field.+?(?<=")\)', self.__raw_str ):
+            f_splt = field.split(',',1)
             setattr(self,
-                re.sub(r'field\s*\(\s*|\s*,.*', '', field).strip(),
-                re.sub(r'[^,]*,|"\s*\)|\s*"', '', field).strip())
+                re.sub(r'field\s*\(\s*', '', f_splt[0]).strip(),
+                re.sub(r'"\s*\)|\s*"', '', f_splt[1]).strip())
 
 class Database():
 
@@ -39,9 +50,9 @@ class Database():
             (self.sub_dict, len(self.records))
 
     def print_records(self):
-            for val in sorted([rec for rec in self.records.values()],\
-                key=lambda record: record.type if hasattr(record, 'type') else ''):
-                print(val)
+        for val in sorted([rec for rec in self.records.values()],\
+            key=lambda record: record.type if hasattr(record, 'type') else ''):
+            print(val)
 
     def load(self, f_name):
         with open(f_name, 'r') as f:
@@ -92,20 +103,27 @@ db = Database()
 db.load('db')
 
 from graphviz import Digraph
- 
-g = Digraph('G', filename='db.gv') 
-
+s = Digraph('structs', filename='db.dot', node_attr={'shape': 'record'})
 for r in db.records.values():
-    attrs = ['FLNK','OUT','INP','INPA']
-    for attr in attrs:
-        p_to = db.points_to(r.name, [attr])
-        if p_to:
-            for p in p_to:
-                if not 'Const'in p:
-                    g.edge(p.replace(':',' '),r.name.replace(':',' '),label=attr)
-                    # print(p, r.name,attr)
-    # if p_to:
-    #     print('Attr %s from %s -> %s' % (attrs, p_to, r.name))
-g.view()
+    # if r.type == 'calc' or r.type == 'calcout':
+    if ':CAV:' in  r.name and not 'Const' in r.name:
+        r.node(s)
+s.view()
+# g = Digraph('G', filename='db.dot')
 
-# python3 -m xdot db.gv
+# for r in db.records.values():
+#     attrs = ['INP','INPA','INPB','INPC','INPD','INPE','INPF','INPG','INPH','INPI']
+#     for attr in attrs:
+#         p_to = db.points_to(r.name, [attr])
+#         if p_to:
+#             for p in p_to:
+#                 if not 'Const'in p:
+#                     g.edge(r.name.replace(':',' '),p.replace(':',' '),label=attr)
+#                     # print(p, r.name,attr)
+
+# g.view()
+
+# kgraphviewer kgraphviewer-dev
+# sfdp -x -Goverlap=scale -Tx11 -Tpng db.dot > db.png
+# sfdp -x -Goverlap=scale -Tx11 
+# ./dbViz.py && sfdp -x -Goverlap=scale -Tx11 -Tpng db.dot
